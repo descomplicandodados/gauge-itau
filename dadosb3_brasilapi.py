@@ -67,7 +67,6 @@ script_configs = [
     },
 ]
 
-# Armazenar todos os CNPJs coletados
 all_cnpjs = []
 
 # Processar cada configuração de script
@@ -80,12 +79,11 @@ for config in script_configs:
     )
     all_cnpjs.extend(cnpjs)
 
-# Consultar a API da BrasilAPI para cada CNPJ coletado, limitando a 5 coletas válidas
 empresas_b3 = []
 success_count = 0
 
 for cnpj in all_cnpjs:
-    # Adiciona um '0' se o CNPJ tiver menos de 14 caracteres
+    # Adiciona um '0' se o CNPJ tiver menos de 14 caracteres e ignora se for apenas 0 ou 00
     if len(cnpj) == 13:
         cnpj = '0' + cnpj
 
@@ -95,18 +93,17 @@ for cnpj in all_cnpjs:
     if len(cnpj) == 11:
         cnpj = '000' + cnpj        
 
-    # Ignora o CNPJ se for apenas '0'
     if cnpj in ['0', '00']:
         continue
 
     # Tentativas de requisição
-    for attempt in range(2):  # Duas tentativas
+    for attempt in range(2):  
         try:
-            response = requests.get(f"https://brasilapi.com.br/api/cnpj/v1/{cnpj}", timeout=10)  # Adiciona timeout de 10 segundos
-            print(f"Status Code para o CNPJ {cnpj}: {response.status_code}")  # Imprime o código de status
+            response = requests.get(f"https://brasilapi.com.br/api/cnpj/v1/{cnpj}", timeout=10) 
+            print(f"Status Code para o CNPJ {cnpj}: {response.status_code}")  
             
-            response.raise_for_status()  # Levanta um erro para status codes 4xx e 5xx
-            if response.text:  # Verifica se a resposta não está vazia
+            response.raise_for_status()  
+            if response.text:  
                 data = response.json()
                 empresas_b3.append(data)
             else:
@@ -122,58 +119,51 @@ for cnpj in all_cnpjs:
 
         except requests.exceptions.RequestException as e:
             print(f"Erro ao consultar CNPJ {cnpj}: {e}")
-            break  # Em caso de erro, sair do loop
+            break  
 
         except ValueError as ve:
             print(f"Erro ao decodificar a resposta JSON para o CNPJ {cnpj}: {ve}")
             print(f"Conteúdo da resposta: {response.text}")
-            break  # Em caso de erro, sair do loop
+            break  
 
-# Criar um DataFrame com os dados coletados
 df = pd.DataFrame(empresas_b3)
 
-# Imprimir o DataFrame antes de finalizar o script
 print("DataFrame coletado:")
 print(df)
 
-# Verifica se o DataFrame não está vazio
 if not df.empty:
-    # Transformar todas as letras em minúsculas e substituir espaços por underscores
+    # Transformar todas as letras em minúsculas e substituir espaços por '_'
     df.columns = [unidecode(col.lower().replace(' ', '_')) if isinstance(col, str) else col for col in df.columns]
     df = df.applymap(lambda x: unidecode(x.lower().replace(' ', '_')) if isinstance(x, str) else x)
-
-    # Extrair ano e mês da coluna "data_inicio_atividade", se existir
+    
     if 'data_inicio_atividade' in df.columns:
         df['ano'] = pd.to_datetime(df['data_inicio_atividade'], errors='coerce').dt.year
         df['mes'] = pd.to_datetime(df['data_inicio_atividade'], errors='coerce').dt.month
 
-    # Criar um novo DataFrame para a coluna 'qsa'
+    # Criar um novo DataFrame para a coluna 'qsa', essa coluna continha uma lista dentro dela.
     qsa_data = []
     for index, row in df.iterrows():
-        cnpj = row['cnpj']  # Captura o CNPJ
-        qsa_list = row['qsa']  # Captura a lista de sócios
+        cnpj = row['cnpj']  
+        qsa_list = row['qsa']  
         if isinstance(qsa_list, list):
             for socio in qsa_list:
-                socio['cnpj'] = cnpj  # Associa o CNPJ a cada sócio
+                socio['cnpj'] = cnpj  
                 qsa_data.append(socio)
 
-    # Criar DataFrame de QSA
+
     df_qsa = pd.DataFrame(qsa_data)
 
     # Transformar todas as letras do DataFrame de QSA
     df_qsa.columns = [unidecode(col.lower().replace(' ', '_')) if isinstance(col, str) else col for col in df_qsa.columns]
     df_qsa = df_qsa.applymap(lambda x: unidecode(x.lower().replace(' ', '_')) if isinstance(x, str) else x)
 
-    # Salvar o DataFrame de QSA
-    df_qsa.to_csv('dim_socios_cnpj_b3.csv', index=False)  # Salvar o DataFrame de QSA
 
-    # Remover a coluna 'cnaes_secundarios' do DataFrame principal
+    df_qsa.to_csv('dim_socios_cnpj_b3.csv', index=False)  
+
+    # Remover colunas do df
     df.drop(columns=['cnaes_secundarios'], inplace=True, errors='ignore')
-
-    # Remover a coluna 'qsa' do DataFrame principal
     df.drop(columns=['qsa'], inplace=True, errors='ignore')
-
-    # Salvar DataFrame em CSV (sem a coluna 'qsa')
+    
     df.to_csv('f_dados_cnpj_b3.csv', index=False)
 
     print("Processo concluído e arquivos CSV gerados.")
