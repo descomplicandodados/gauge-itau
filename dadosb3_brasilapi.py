@@ -132,6 +132,23 @@ print("DataFrame coletado:")
 print(df)
 
 if not df.empty:
+
+        # Preencher coluna 'pais' com 'brasil' se estiver vazia
+    df['pais'] = df['pais'].fillna('brasil').replace('', 'brasil')
+
+    # Remover colunas indesejadas
+    columns_to_remove = [
+        'email', 
+        'codigo_pais', 
+        'opcao_pelo_mei', 
+        'data_opcao_pelo_mei', 
+        'data_exclusao_do_mei', 
+        'data_exclusao_do_simples', 
+        'ente_federativo_responsavel', 
+        'data_opcao_pelo_simples'
+    ]
+    df.drop(columns=columns_to_remove, inplace=True, errors='ignore')
+
     # Transformar todas as letras em minúsculas e substituir espaços por '_'
     df.columns = [unidecode(col.lower().replace(' ', '_')) if isinstance(col, str) else col for col in df.columns]
     df = df.applymap(lambda x: unidecode(x.lower().replace(' ', '_')) if isinstance(x, str) else x)
@@ -147,7 +164,9 @@ if not df.empty:
         qsa_list = row['qsa']  
         if isinstance(qsa_list, list):
             for socio in qsa_list:
-                socio['cnpj'] = cnpj  
+                socio['cnpj'] = cnpj
+                if 'pais' not in socio or socio['pais'] in [None, '']:
+                    socio['pais'] = 'brasil'  
                 qsa_data.append(socio)
 
 
