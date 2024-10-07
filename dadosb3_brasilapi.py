@@ -86,31 +86,48 @@ success_count = 0
 
 for cnpj in all_cnpjs:
     # Adiciona um '0' se o CNPJ tiver menos de 14 caracteres
-    if len(cnpj) < 14:
+    if len(cnpj) == 13:
         cnpj = '0' + cnpj
+
+    if len(cnpj) == 12:
+        cnpj = '00' + cnpj
+
+    if len(cnpj) == 11:
+        cnpj = '000' + cnpj        
 
     # Ignora o CNPJ se for apenas '0'
     if cnpj in ['0', '00']:
         continue
 
-    try:
-        response = requests.get(f"https://brasilapi.com.br/api/cnpj/v1/{cnpj}")
-        response.raise_for_status()  # Levanta um erro para status codes 4xx e 5xx
-        if response.text:  # Verifica se a resposta não está vazia
-            data = response.json()
-            empresas_b3.append(data)
-            success_count += 1  # Incrementa a contagem de coletas válidas
+    # Tentativas de requisição
+    for attempt in range(2):  # Duas tentativas
+        try:
+            response = requests.get(f"https://brasilapi.com.br/api/cnpj/v1/{cnpj}", timeout=10)  # Adiciona timeout de 10 segundos
+            print(f"Status Code para o CNPJ {cnpj}: {response.status_code}")  # Imprime o código de status
             
-            # Para o loop se coletou 5 dados válidos
-            if success_count >= 5:
-                break
-        else:
-            print(f"Nenhum dado retornado para o CNPJ {cnpj}.")
-    except requests.exceptions.RequestException as e:
-        print(f"Erro ao consultar CNPJ {cnpj}: {e}")
-    except ValueError as ve:
-        print(f"Erro ao decodificar a resposta JSON para o CNPJ {cnpj}: {ve}")
-        print(f"Conteúdo da resposta: {response.text}")
+            response.raise_for_status()  # Levanta um erro para status codes 4xx e 5xx
+            if response.text:  # Verifica se a resposta não está vazia
+                data = response.json()
+                empresas_b3.append(data)
+            else:
+                print(f"Nenhum dado retornado para o CNPJ {cnpj}.")
+            break  # Se a requisição for bem-sucedida, sai do loop
+
+        except requests.exceptions.Timeout:
+            if attempt == 0:  # Apenas tenta novamente se for a primeira tentativa
+                print(f"Timeout ao consultar CNPJ {cnpj}. Tentando novamente.")
+            else:
+                print(f"Timeout ao consultar CNPJ {cnpj}. Ignorando essa requisição.")
+                break  # Se for a segunda tentativa, vai para o próximo CNPJ
+
+        except requests.exceptions.RequestException as e:
+            print(f"Erro ao consultar CNPJ {cnpj}: {e}")
+            break  # Em caso de erro, sair do loop
+
+        except ValueError as ve:
+            print(f"Erro ao decodificar a resposta JSON para o CNPJ {cnpj}: {ve}")
+            print(f"Conteúdo da resposta: {response.text}")
+            break  # Em caso de erro, sair do loop
 
 # Criar um DataFrame com os dados coletados
 df = pd.DataFrame(empresas_b3)
@@ -158,14 +175,6 @@ if not df.empty:
 
     # Salvar DataFrame em CSV (sem a coluna 'qsa')
     df.to_csv('f_dados_cnpj_b3.csv', index=False)
-
-    # Agrupar e salvar outros CSVs conforme solicitado
-    if 'cnae_fiscal_descricao' in df.columns and 'porte' in df.columns:
-        df.groupby(['cnae_fiscal_descricao', 'porte']).size().reset_index(name='count').to_csv('cnae_porte.csv', index=False)
-    if 'uf' in df.columns and 'municipio' in df.columns:
-        df.groupby(['uf', 'municipio']).size().reset_index(name='count').to_csv('uf_municipio.csv', index=False)
-    if 'ano' in df.columns and 'mes' in df.columns:
-        df.groupby(['ano', 'mes']).size().reset_index(name='count').to_csv('ano_mes.csv', index=False)
 
     print("Processo concluído e arquivos CSV gerados.")
 else:
